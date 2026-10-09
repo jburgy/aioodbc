@@ -37,11 +37,14 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Install dependencies
       run: |
+        python -m venv .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+        echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
         sudo apt-get install -y libsqliteodbc unixodbc
         odbcinst -j
         cat /etc/odbcinst.ini
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        .venv/bin/python -m pip install --upgrade pip
+        .venv/bin/pip install -r requirements-dev.txt
     - name: Lint
       run: |
         cargo fmt --check
