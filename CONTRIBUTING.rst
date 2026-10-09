@@ -47,44 +47,40 @@ Work flow is pretty straightforward:
 Preconditions for running aioodbc test suite
 ---------------------------------------------
 
-We expect you to use a python virtual environment and docker_ to run
-our tests.
+We expect you to use a python virtual environment plus a Rust toolchain
+(stable) to run our tests.
 
 There are several ways to make a virtual environment.
 
 If you like to use *virtualenv* please run::
 
    $ cd aioodbc
-   $ virtualenv --python=`which python3.5` venv
+   $ virtualenv --python=`which python3` venv
 
 For standard python *venv*::
 
    $ cd aioodbc
-   $ python3.5 -m venv venv
+   $ python3 -m venv venv
 
 For *virtualenvwrapper*::
 
    $ cd aioodbc
-   $ mkvirtualenv --python=`which python3.5` aioodbc
+   $ mkvirtualenv --python=`which python3` aioodbc
 
-There are other tools like *pyvenv* but you know the rule of thumb
-now: create a python3.5 virtual environment and activate it.
-
-After that please install libraries required for development::
+After that please install libraries required for development and build the
+extension::
 
    $ pip install -r requirements-dev.txt
-
-We also recommend to install *ipdb* but it's on your own::
-
-   $ pip install ipdb
+   $ maturin develop
 
 Congratulations, you are ready to run the test suite
 
 
 Install database
 ----------------
-You do not need to install any databases, docker_ will pull images and create
-containers for you automatically, after the tests, containers will be removed.
+Install unixODBC and the SQLite ODBC driver (e.g. ``apt-get install
+unixodbc libsqliteodbc`` or ``brew install unixodbc sqliteodbc``); the test
+suite runs against SQLite by default.
 
 
 Run aioodbc test suite
@@ -93,16 +89,13 @@ Run aioodbc test suite
 After all the preconditions are met you can run tests typing the next
 command::
 
-   $ make test
+   $ cargo fmt --check
+   $ cargo clippy --all-targets -- -D warnings
+   $ pytest
 
 Or if you want to run only one particular test::
 
-    $ py.test tests/test_connection.py -k test_basic_cursor
-
-The command at first will run the static and style checkers (sorry, we don't
-accept pull requests with `pep8` or `pyflakes` errors).
-
-On `flake8` success the tests will be run.
+    $ pytest tests/test_aioodbc.py -k test_connect_execute_fetch
 
 Please take a look on the produced output.
 
@@ -116,29 +109,11 @@ We are trying hard to have good test coverage; please don't make it worse.
 
 Use::
 
-   $ make cov
+   $ pytest --cov=aioodbc tests/
 
-to run test suite and collect coverage information. Once the command
-has finished check your coverage at the file that appears in the last
-line of the output:
-``open file:///.../aioodbc/htmlcov/index.html``
+to run the test suite and collect coverage information for the Python
+glue (the compiled Rust extension itself is not covered by this).
 
-Please go to the link and make sure that your code change is covered.
-
-
-Documentation
--------------
-
-We encourage documentation improvements.
-
-Please before making a Pull Request about documentation changes run::
-
-   $ make doc
-
-Once it finishes it will output the index html page
-``open file:///.../aioodbc/docs/_build/html/index.html``.
-
-Go to the link and make sure your doc changes looks good.
 
 The End
 -------
