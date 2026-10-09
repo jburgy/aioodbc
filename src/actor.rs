@@ -170,11 +170,12 @@ impl ActorHandle {
 /// connection handles are not safe to touch from two threads at once),
 /// which makes any future holding a borrow of it (i.e. an open
 /// `CursorPolling`, kept alive across `execute`/`fetch` calls) `!Send`
-/// too -- so it cannot run on `tokio::spawn`'s multi-threaded pool.
-/// Instead each connection gets its own OS thread running a
-/// single-threaded Tokio runtime + `LocalSet`, which happily hosts
-/// `!Send` futures. One thread per open `Connection` is the same cost
-/// most sync DB pooling libraries (HikariCP, r2d2, ...) already pay.
+/// too -- so it cannot run on `tokio::spawn`'s multi-threaded pool
+/// (`Runtime::block_on` has no such bound, so a plain `current_thread`
+/// runtime hosts it with no extra machinery). Instead each connection
+/// gets its own OS thread running a private single-threaded Tokio
+/// runtime. One thread per open `Connection` is the same cost most
+/// sync DB pooling libraries (HikariCP, r2d2, ...) already pay.
 pub async fn connect(dsn: String, autocommit: bool) -> Result<ActorHandle, OdbcError> {
     let (tx, rx) = mpsc::channel(8);
     let (ready_tx, ready_rx) = oneshot::channel();
@@ -194,7 +195,7 @@ pub async fn connect(dsn: String, autocommit: bool) -> Result<ActorHandle, OdbcE
             .enable_time()
             .build()
             .expect("failed to start per-connection runtime");
-        tokio::task::LocalSet::new().block_on(&rt, run(conn, rx));
+        rt.block_on(run(conn, rx));
     });
     ready_rx.await.unwrap_or(Err(OdbcError::NoDiagnostics {
         function: "connect",
