@@ -13,21 +13,21 @@ aioodbc
     :target: https://gitter.im/aio-libs/Lobby
     :alt: Chat on Gitter
 
-**aioodbc** is a Python 3.7+ module that makes it possible to access ODBC_ databases
-with asyncio_. It relies on the awesome pyodbc_ library and preserves the same look and
-feel. Internally *aioodbc* employs threads to avoid blocking the event loop,
-threads_ are not that as bad as you think!. Other drivers like motor_ use the
-same approach.
+**aioodbc** is a Python 3.9+ module that makes it possible to access ODBC_ databases
+with asyncio_. This fork ports the implementation from pure Python (threads calling
+pyodbc_ via an executor) to Rust_ and PyO3_ on top of odbc-api_, using ODBC's own
+asynchronous execution support so queries genuinely run without blocking the event
+loop, no thread pool required. The public API is unchanged: it still looks and
+feels like pyodbc_.
 
-**aioodbc** is fully compatible and tested with uvloop_. Take a look at the test
-suite, all tests are executed with both the default event loop and uvloop_.
+**aioodbc** is fully compatible and tested with uvloop_.
 
 
 Basic Example
 -------------
 
-**aioodbc** is based on pyodbc_ and provides the same api, you just need
-to use  ``yield from conn.f()`` or ``await conn.f()`` instead of ``conn.f()``
+**aioodbc** provides essentially the same API as pyodbc_, you just need
+to use ``await conn.f()`` instead of ``conn.f()``.
 
 Properties are unchanged, so ``conn.prop`` is correct as well as
 ``conn.prop = val``.
@@ -59,7 +59,7 @@ Properties are unchanged, so ``conn.prop`` is correct as well as
 
 Connection Pool
 ---------------
-Connection pooling is ported from aiopg_ and relies on PEP492_ features:
+Connection pooling is backed by the deadpool_ Rust crate:
 
 .. code:: python
 
@@ -113,36 +113,77 @@ protocol:
     asyncio.run(test_example())
 
 
+Architecture
+------------
+
+* Query *execution* and *fetching* use `odbc-api`'s polling-mode asynchronous
+  execution (`SQL_ATTR_ASYNC_ENABLE` + repeated polling, yielding to Tokio's
+  ``sleep`` between polls) instead of a thread pool -- see the `ODBC asynchronous
+  execution docs`_. The notification method (the other asynchronous execution
+  model ODBC documents) only works with Microsoft's own Windows driver manager
+  and is barely supported by drivers either way, so it was not a realistic
+  cross-platform choice; see `odbc-api`'s own guide for details. Operations with
+  no async ODBC equivalent at all (connecting, commit/rollback, describing
+  columns) remain quick, bounded, synchronous calls -- same as what pyodbc
+  itself does for them.
+* Each `Connection` is driven by a small background "actor" task that owns the
+  ``odbc_api::Connection`` and talks to `Connection`/`Cursor` objects over a
+  channel. ``odbc_api::Connection`` is deliberately not `Sync`, which rules out
+  sharing it across Tokio's worker-thread pool; each actor instead gets its own
+  OS thread running a single-threaded Tokio runtime, the standard fix for
+  hosting non-``Send`` async state (the same one-thread-per-connection cost
+  most synchronous pooling libraries already pay).
+* Only one statement/result set is open per connection at a time (a second
+  `Cursor.execute()` on the same connection closes whatever the first cursor
+  had open); use one `Cursor` per `Connection`, or a `Pool`, for concurrency.
+* Rows are returned as ``collections.namedtuple`` instances (stdlib, not a
+  custom row type) so ``row[0]`` and ``row.col_name`` both work.
+* Connection pooling is backed by deadpool_ instead of a hand-rolled pool.
+
+Scope cuts from upstream aioodbc/pyodbc, to keep this port roughly the same
+size as the Python original: the ODBC catalog/introspection convenience
+methods (``getinfo``, ``tables``, ``columns``, ``statistics``,
+``primaryKeys``, ``foreignKeys``, ``getTypeInfo``, ``procedures``, output
+converters, ``set_attr``, ...), the ``echo``/``ansi``/``after_created``
+knobs, and ``dataSources()`` were left out as speculative surface unlikely
+to be needed by a port; add them if you need them. ``executemany`` issues
+one statement per row rather than a true ODBC array bind. Rows affected by
+an ``INSERT``/``UPDATE``/``DELETE`` (``cursor.rowcount``) is always ``-1``
+(DB-API's "unknown" sentinel): the safe `odbc-api` wrappers free the
+statement before ``SQLRowCount`` could be read for statements that produce
+no result set.
+
+
 Installation
 ------------
 
-In a linux environment pyodbc_ (hence *aioodbc*) requires the unixODBC_ library.
-You can install it using your package manager, for example::
+Building **aioodbc** requires a Rust_ toolchain (stable) and maturin_, in
+addition to the unixODBC_ library pyodbc_-based tools also need::
 
-      $ sudo apt-get install unixodbc
-      $ sudo apt-get install unixodbc-dev
+      $ sudo apt-get install unixodbc unixodbc-dev
+      $ pip install maturin
+      $ maturin develop   # or: pip install .
 
-Then::
-
-   pip install aioodbc
+A released wheel only needs the unixODBC runtime library to be installed;
+the Rust toolchain is only needed to build from source.
 
 
 Run tests
 ---------
-To run tests locally without docker, install `unixodbc` and `sqlite` driver::
+To run tests locally, install `unixodbc` and the `sqlite` ODBC driver::
 
-      $ sudo apt-get install unixodbc
-      $ sudo apt-get install libsqliteodbc
+      $ sudo apt-get install unixodbc libsqliteodbc
 
-Create virtualenv and install package with requirements::
+Create a virtualenv, build the extension and install the dev requirements::
 
       $ pip install -r requirements-dev.txt
+      $ maturin develop
 
 Run tests, lints etc::
 
-      $ make fmt
-      $ make lint
-      $ make test
+      $ cargo fmt --check
+      $ cargo clippy
+      $ pytest
 
 
 Other SQL Drivers
@@ -155,8 +196,9 @@ Other SQL Drivers
 Requirements
 ------------
 
-* Python_ 3.7+
-* pyodbc_
+* Python_ 3.9+
+* Rust_ (stable, to build from source)
+* odbc-api_ / unixODBC_
 * uvloop_ (optional)
 
 
@@ -169,6 +211,11 @@ Requirements
 .. _aiomysql: https://github.com/aio-libs/aiomysql
 .. _PEP492: https://www.python.org/dev/peps/pep-0492/
 .. _unixODBC: http://www.unixodbc.org/
-.. _threads: http://techspot.zzzeek.org/2015/02/15/asynchronous-python-and-databases/
 .. _docker: https://docs.docker.com/engine/installation/
-.. _motor: https://emptysqua.re/blog/motor-0-7-beta/
+.. _Rust: https://www.rust-lang.org/
+.. _PyO3: https://pyo3.rs/
+.. _odbc-api: https://github.com/pacman82/odbc-api
+.. _deadpool: https://github.com/deadpool-rs/deadpool
+.. _maturin: https://www.maturin.rs/
+.. _ODBC asynchronous execution docs: https://learn.microsoft.com/en-us/sql/odbc/reference/develop-app/asynchronous-execution-notification-method
+

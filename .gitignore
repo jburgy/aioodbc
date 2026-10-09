@@ -5,6 +5,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Rust build artifacts
+/target/
+
 # Distribution / packaging
 .Python
 env/
@@ -76,3 +79,5 @@ sqlite_*.db
 _version.py
 .mypy_cache/
 .eggs/
+
+.pytest_cache/

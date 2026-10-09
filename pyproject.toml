@@ -1,6 +1,34 @@
-# pyproject.toml
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2", "setuptools_scm_git_archive"]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
 
-[tool.setuptools_scm]
-write_to = "aioodbc/_version.py"
+[project]
+name = "aioodbc"
+version = "1.0.0"
+description = "ODBC driver for asyncio, implemented in Rust on top of odbc-api with native asynchronous execution"
+readme = "README.rst"
+requires-python = ">=3.9"
+license = { text = "Apache 2" }
+authors = [{ name = "Nikolay Novik", email = "nickolainovik@gmail.com" }]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Operating System :: POSIX",
+    "Development Status :: 3 - Alpha",
+    "Topic :: Database",
+    "Topic :: Database :: Front-Ends",
+    "Framework :: AsyncIO",
+]
+
+[project.urls]
+Homepage = "https://github.com/aio-libs/aioodbc"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "aioodbc._aioodbc"
+python-source = "python"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -1,0 +1,17 @@
+[package]
+name = "aioodbc"
+version = "1.0.0"
+edition = "2021"
+description = "asyncio support for ODBC via pyodbc, ported to Rust/PyO3 with native async execution"
+license = "Apache-2.0"
+
+[lib]
+name = "_aioodbc"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+odbc-api = "29"
+deadpool = { version = "0.13", default-features = false, features = ["managed", "rt_tokio_1"] }
