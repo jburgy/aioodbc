@@ -317,6 +317,11 @@ async fn fetch_batch<'c>(
         *block_cursor = None;
         return Ok(None);
     };
+    // Copies buffer bytes into an owned `Cell` here rather than straight
+    // into a `PyUnicode`/`PyBytes` (which would save the later copy in
+    // `cell_to_py`): that would need the GIL, and this actor thread never
+    // touches it. One extra copy for Text/Bytes beats coupling the actor
+    // to PyO3 for a cost nothing has shown to matter.
     let rows = (0..batch.num_rows())
         .map(|row| {
             columns
